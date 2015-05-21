@@ -1,24 +1,26 @@
 #cloud-config
----
+
 coreos:
-  etcd:
+  etcd2:
     # generate a new token for each unique cluster from https://discovery.etcd.io/new
     # uncomment the following line and replace it with your discovery URL
     # discovery: https://discovery.etcd.io/12345693838asdfasfadf13939923
-    addr: $private_ipv4:4001
-    peer-addr: $private_ipv4:7001
+    # multi-region and multi-cloud deployments need to use $public_ipv4
+    advertise-client-urls: http://$public_ipv4:2379
+    initial-advertise-peer-urls: http://$private_ipv4:2380
+    # listen on both the official ports and the legacy ports
+    # legacy ports can be omitted if your application doesn't depend on them
+    listen-client-urls: http://0.0.0.0:2379,http://0.0.0.0:4001
+    listen-peer-urls: http://$private_ipv4:2380,http://$private_ipv4:7001
     # give etcd more time if it's under heavy load - prevent leader election thrashing
-    peer-election-timeout: 2000
+    election-timeout: 2000
     # heartbeat interval should ideally be 1/4 or 1/5 of peer election timeout
-    peer-heartbeat-interval: 500
+    heartbeat-interval: 500
   fleet:
-    # We have to set the public_ip here so this works on Vagrant -- otherwise, Vagrant VMs
-    # will all publish the same private IP. This is harmless for cloud providers.
-    public-ip: $private_ipv4
     # allow etcd to slow down at times
     etcd_request_timeout: 3.0
   units:
-  - name: etcd.service
+  - name: etcd2.service
     command: start
   - name: docker-tcp.socket
     command: start
@@ -37,7 +39,7 @@ coreos:
     command: start
     content: |
       [Unit]
-      Description=stop update-engine
+      Description=Stop update-engine
 
       [Service]
       Type=oneshot
@@ -53,15 +55,6 @@ coreos:
       [Service]
       Type=oneshot
       ExecStart=/usr/bin/sh -c 'curl -sSL --retry 5 --retry-delay 2 http://deis.io/deisctl/install.sh | sh -s 1.6.1'
-  - name: debug-etcd.service
-    content: |
-      [Unit]
-      Description=etcd debugging service
-
-      [Service]
-      ExecStartPre=/usr/bin/curl -sSL -o /opt/bin/jq http://stedolan.github.io/jq/download/linux64/jq
-      ExecStartPre=/usr/bin/chmod +x /opt/bin/jq
-      ExecStart=/usr/bin/bash -c "while true; do curl -sL http://127.0.0.1:4001/v2/stats/leader | /opt/bin/jq . ; sleep 1 ; done"
   - name: increase-nf_conntrack-connections.service
     command: start
     content: |
@@ -99,7 +92,7 @@ write_files:
     content: |
         [Service]
         EnvironmentFile=/etc/environment_proxy
-        Environment="DOCKER_OPTS=--insecure-registry 10.0.0.0/8 --insecure-registry 172.16.0.0/12 --insecure-registry 192.168.0.0/16 --insecure-registry 100.64.0.0/10"
+        Environment="DOCKER_OPTS=--insecure-registry 10.0.0.0/8 --insecure-registry 172.16.0.0/12 --insecure-registry 192.168.0.0/16"
   - path: /run/deis/bin/get_image
     permissions: '0755'
     content: |
